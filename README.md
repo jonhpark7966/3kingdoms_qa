@@ -1,12 +1,12 @@
 ---
-title: Demo Leaderboard
+title: 3kingdoms Qa Leaderboard
 emoji: 🥇
 colorFrom: green
 colorTo: indigo
 sdk: gradio
 app_file: app.py
 pinned: true
-license: apache-2.0
+license: unlicense
 ---
 
 # Start the configuration
