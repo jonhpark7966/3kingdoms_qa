@@ -1,204 +1,267 @@
-import gradio as gr
-from gradio_leaderboard import Leaderboard, ColumnFilter, SelectColumns
+import streamlit as st
 import pandas as pd
-from apscheduler.schedulers.background import BackgroundScheduler
-from huggingface_hub import snapshot_download
+import os
+import time
+from datetime import datetime
+import threading
 
-from src.about import (
-    CITATION_BUTTON_LABEL,
-    CITATION_BUTTON_TEXT,
-    EVALUATION_QUEUE_TEXT,
-    INTRODUCTION_TEXT,
-    LLM_BENCHMARKS_TEXT,
-    TITLE,
+# 모듈 임포트
+from quiz_manager import QuizManager
+from api_client import APIClient
+from scoring import Scorer
+from leaderboard_manager import LeaderboardManager
+from logger import QuizLogger
+import utils
+
+# Set page title and configuration
+st.set_page_config(
+    page_title="3kingdoms Quiz Leaderboard",
+    page_icon="🏆",
+    layout="wide"
 )
-from src.display.css_html_js import custom_css
-from src.display.utils import (
-    BENCHMARK_COLS,
-    COLS,
-    EVAL_COLS,
-    EVAL_TYPES,
-    AutoEvalColumn,
-    ModelType,
-    fields,
-    WeightType,
-    Precision
-)
-from src.envs import API, EVAL_REQUESTS_PATH, EVAL_RESULTS_PATH, QUEUE_REPO, REPO_ID, RESULTS_REPO, TOKEN
-from src.populate import get_evaluation_queue_df, get_leaderboard_df
-from src.submission.submit import add_new_eval
 
+# 데이터 경로 설정
+DATA_DIR = "data"
+QUIZ_DATA_PATH = os.path.join(DATA_DIR, "quiz_data.csv")
+LEADERBOARD_PATH = os.path.join(DATA_DIR, "leaderboard.csv")
 
-def restart_space():
-    API.restart_space(repo_id=REPO_ID)
+# 디렉토리 생성
+os.makedirs(DATA_DIR, exist_ok=True)
 
-### Space initialisation
-try:
-    print(EVAL_REQUESTS_PATH)
-    snapshot_download(
-        repo_id=QUEUE_REPO, local_dir=EVAL_REQUESTS_PATH, repo_type="dataset", tqdm_class=None, etag_timeout=30, token=TOKEN
-    )
-except Exception:
-    restart_space()
-try:
-    print(EVAL_RESULTS_PATH)
-    snapshot_download(
-        repo_id=RESULTS_REPO, local_dir=EVAL_RESULTS_PATH, repo_type="dataset", tqdm_class=None, etag_timeout=30, token=TOKEN
-    )
-except Exception:
-    restart_space()
+# 전역 객체 초기화
+@st.cache_resource
+def init_resources():
+    quiz_manager = QuizManager(QUIZ_DATA_PATH)
+    leaderboard_manager = LeaderboardManager(LEADERBOARD_PATH)
+    scorer = Scorer()
+    logger = QuizLogger()
+    return quiz_manager, leaderboard_manager, scorer, logger
 
+quiz_manager, leaderboard_manager, scorer, logger = init_resources()
 
-LEADERBOARD_DF = get_leaderboard_df(EVAL_RESULTS_PATH, EVAL_REQUESTS_PATH, COLS, BENCHMARK_COLS)
+# Function to load the leaderboard data
+def load_leaderboard():
+    return pd.read_csv(LEADERBOARD_PATH)
 
-(
-    finished_eval_queue_df,
-    running_eval_queue_df,
-    pending_eval_queue_df,
-) = get_evaluation_queue_df(EVAL_REQUESTS_PATH, EVAL_COLS)
+# Function to save the leaderboard data
+def save_leaderboard(df):
+    df.to_csv(LEADERBOARD_PATH, index=False)
 
-def init_leaderboard(dataframe):
-    if dataframe is None or dataframe.empty:
-        raise ValueError("Leaderboard DataFrame is empty or None.")
-    return Leaderboard(
-        value=dataframe,
-        datatype=[c.type for c in fields(AutoEvalColumn)],
-        select_columns=SelectColumns(
-            default_selection=[c.name for c in fields(AutoEvalColumn) if c.displayed_by_default],
-            cant_deselect=[c.name for c in fields(AutoEvalColumn) if c.never_hidden],
-            label="Select Columns to Display:",
-        ),
-        search_columns=[AutoEvalColumn.model.name, AutoEvalColumn.license.name],
-        hide_columns=[c.name for c in fields(AutoEvalColumn) if c.hidden],
-        filter_columns=[
-            ColumnFilter(AutoEvalColumn.model_type.name, type="checkboxgroup", label="Model types"),
-            ColumnFilter(AutoEvalColumn.precision.name, type="checkboxgroup", label="Precision"),
-            ColumnFilter(
-                AutoEvalColumn.params.name,
-                type="slider",
-                min=0.01,
-                max=150,
-                label="Select the number of parameters (B)",
-            ),
-            ColumnFilter(
-                AutoEvalColumn.still_on_hub.name, type="boolean", label="Deleted/incomplete", default=True
-            ),
-        ],
-        bool_checkboxgroup_label="Hide models",
-        interactive=False,
-    )
+# Main title
+st.title("🏆 3kingdoms Quiz Leaderboard")
+st.markdown("삼국지 퀴즈 API 리더보드 - 당신의 API 엔드포인트를 제출하고 성능을 확인하세요!")
 
+# Create tabs for viewing and adding entries
+tab1, tab2, tab3 = st.tabs(["리더보드", "API 제출", "진행 상황 모니터링"])
 
-demo = gr.Blocks(css=custom_css)
-with demo:
-    gr.HTML(TITLE)
-    gr.Markdown(INTRODUCTION_TEXT, elem_classes="markdown-text")
-
-    with gr.Tabs(elem_classes="tab-buttons") as tabs:
-        with gr.TabItem("🏅 LLM Benchmark", elem_id="llm-benchmark-tab-table", id=0):
-            leaderboard = init_leaderboard(LEADERBOARD_DF)
-
-        with gr.TabItem("📝 About", elem_id="llm-benchmark-tab-table", id=2):
-            gr.Markdown(LLM_BENCHMARKS_TEXT, elem_classes="markdown-text")
-
-        with gr.TabItem("🚀 Submit here! ", elem_id="llm-benchmark-tab-table", id=3):
-            with gr.Column():
-                with gr.Row():
-                    gr.Markdown(EVALUATION_QUEUE_TEXT, elem_classes="markdown-text")
-
-                with gr.Column():
-                    with gr.Accordion(
-                        f"✅ Finished Evaluations ({len(finished_eval_queue_df)})",
-                        open=False,
-                    ):
-                        with gr.Row():
-                            finished_eval_table = gr.components.Dataframe(
-                                value=finished_eval_queue_df,
-                                headers=EVAL_COLS,
-                                datatype=EVAL_TYPES,
-                                row_count=5,
-                            )
-                    with gr.Accordion(
-                        f"🔄 Running Evaluation Queue ({len(running_eval_queue_df)})",
-                        open=False,
-                    ):
-                        with gr.Row():
-                            running_eval_table = gr.components.Dataframe(
-                                value=running_eval_queue_df,
-                                headers=EVAL_COLS,
-                                datatype=EVAL_TYPES,
-                                row_count=5,
-                            )
-
-                    with gr.Accordion(
-                        f"⏳ Pending Evaluation Queue ({len(pending_eval_queue_df)})",
-                        open=False,
-                    ):
-                        with gr.Row():
-                            pending_eval_table = gr.components.Dataframe(
-                                value=pending_eval_queue_df,
-                                headers=EVAL_COLS,
-                                datatype=EVAL_TYPES,
-                                row_count=5,
-                            )
-            with gr.Row():
-                gr.Markdown("# ✉️✨ Submit your model here!", elem_classes="markdown-text")
-
-            with gr.Row():
-                with gr.Column():
-                    model_name_textbox = gr.Textbox(label="Model name")
-                    revision_name_textbox = gr.Textbox(label="Revision commit", placeholder="main")
-                    model_type = gr.Dropdown(
-                        choices=[t.to_str(" : ") for t in ModelType if t != ModelType.Unknown],
-                        label="Model type",
-                        multiselect=False,
-                        value=None,
-                        interactive=True,
-                    )
-
-                with gr.Column():
-                    precision = gr.Dropdown(
-                        choices=[i.value.name for i in Precision if i != Precision.Unknown],
-                        label="Precision",
-                        multiselect=False,
-                        value="float16",
-                        interactive=True,
-                    )
-                    weight_type = gr.Dropdown(
-                        choices=[i.value.name for i in WeightType],
-                        label="Weights type",
-                        multiselect=False,
-                        value="Original",
-                        interactive=True,
-                    )
-                    base_model_name_textbox = gr.Textbox(label="Base model (for delta or adapter weights)")
-
-            submit_button = gr.Button("Submit Eval")
-            submission_result = gr.Markdown()
-            submit_button.click(
-                add_new_eval,
-                [
-                    model_name_textbox,
-                    base_model_name_textbox,
-                    revision_name_textbox,
-                    precision,
-                    weight_type,
-                    model_type,
-                ],
-                submission_result,
+with tab1:
+    st.header("현재 리더보드")
+    
+    # Load and display the leaderboard
+    leaderboard_df = leaderboard_manager.get_leaderboard()
+    
+    # 필터링 옵션들
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        show_completed_only = st.checkbox("완료된 항목만 표시", value=True)
+        deduplicate_names = st.checkbox("이름별 최고 성능만 표시", value=False)
+        
+        if deduplicate_names:
+            dedup_metric = st.radio("중복 제거 기준:", 
+                                   ["정확도 (correct_answer_rate)", 
+                                    "LLM 점수 (llm_judge_result)"])
+    
+    # 필터링 적용
+    if not leaderboard_df.empty:
+        # 완료된 항목만 표시
+        if show_completed_only:
+            leaderboard_df = leaderboard_df[leaderboard_df["status"] == "completed"]
+        
+        # 이름 중복 제거
+        if deduplicate_names and not leaderboard_df.empty:
+            # 수치형으로 변환
+            leaderboard_df["correct_answer_rate"] = pd.to_numeric(leaderboard_df["correct_answer_rate"], errors='coerce')
+            leaderboard_df["llm_judge_result"] = pd.to_numeric(leaderboard_df["llm_judge_result"], errors='coerce')
+            
+            if dedup_metric == "정확도 (correct_answer_rate)":
+                # 각 이름별로 정확도가 가장 높은 행만 선택
+                idx = leaderboard_df.groupby('name')['correct_answer_rate'].idxmax()
+                leaderboard_df = leaderboard_df.loc[idx]
+            else:
+                # 각 이름별로 LLM 점수가 가장 높은 행만 선택
+                idx = leaderboard_df.groupby('name')['llm_judge_result'].idxmax()
+                leaderboard_df = leaderboard_df.loc[idx]
+        
+        # 데이터 형식 지정 (표시용)
+        display_df = leaderboard_df.copy()
+        if "correct_answer_rate" in display_df.columns:
+            display_df["correct_answer_rate"] = display_df["correct_answer_rate"].apply(
+                lambda x: f"{float(x):.2f}%" if pd.notna(x) else "N/A"
             )
-
-    with gr.Row():
-        with gr.Accordion("📙 Citation", open=False):
-            citation_button = gr.Textbox(
-                value=CITATION_BUTTON_TEXT,
-                label=CITATION_BUTTON_LABEL,
-                lines=20,
-                elem_id="citation-button",
-                show_copy_button=True,
+        if "average_response_time" in display_df.columns:
+            display_df["average_response_time"] = display_df["average_response_time"].apply(
+                lambda x: f"{float(x):.2f}초" if pd.notna(x) else "N/A"
             )
+        
+        # 데이터프레임 표시 (Streamlit의 기본 정렬 기능 활용)
+        st.dataframe(display_df, use_container_width=True)
+    else:
+        st.info("아직 리더보드에 항목이 없습니다. 'API 제출' 탭에서 추가해보세요.")
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(restart_space, "interval", seconds=1800)
-scheduler.start()
-demo.queue(default_concurrency_limit=40).launch()
+with tab2:
+    st.header("API 엔드포인트 제출")
+    
+    with st.form("submit_api_form"):
+        name = st.text_input("이름")
+        api_endpoint = st.text_input("API 엔드포인트 URL")
+        
+        submitted = st.form_submit_button("제출")
+        
+        if submitted:
+            if name and api_endpoint:
+                # 입력값 정제
+                name = utils.sanitize_input(name)
+                api_endpoint = utils.sanitize_input(api_endpoint)
+                
+                # 리더보드에 새 항목 추가
+                success = leaderboard_manager.add_new_submission(name, api_endpoint)
+                
+                if success:
+                    st.success(f"{name}님의 API가 제출되었습니다. 퀴즈 처리가 시작됩니다.")
+                    
+                    # 백그라운드에서 퀴즈 처리 시작
+                    thread = threading.Thread(
+                        target=process_quiz,
+                        args=(name, api_endpoint)
+                    )
+                    thread.daemon = True
+                    thread.start()
+                else:
+                    st.error("제출 중 오류가 발생했습니다. 다시 시도해주세요.")
+            else:
+                st.warning("이름과 API 엔드포인트를 모두 입력해주세요.")
+
+with tab3:
+    st.header("퀴즈 진행 상황 모니터링")
+    
+    # 진행 중인 항목 필터링
+    leaderboard_df = leaderboard_manager.get_leaderboard()
+    processing_df = leaderboard_df[leaderboard_df["status"] == "processing"]
+    
+    if not processing_df.empty:
+        st.subheader("현재 진행 중인 퀴즈")
+        
+        for _, row in processing_df.iterrows():
+            name = row["name"]
+            api_endpoint = row["api_endpoint"]
+            current_index = row["current_question_index"]
+            total_questions = quiz_manager.get_total_questions()
+            
+            # 진행 상황 표시
+            st.markdown(f"**{name}** ({api_endpoint})")
+            progress = int(current_index) / total_questions if total_questions > 0 else 0
+            st.progress(progress)
+            st.text(f"문제 {current_index}/{total_questions} 진행 중")
+            
+            # 로그 표시
+            logs = logger.get_user_log(name, api_endpoint)
+            if logs:
+                with st.expander("상세 로그 보기"):
+                    for log in logs:
+                        st.markdown(f"""
+                        **문제 {log['question_index']}**: {log['question']}  
+                        **응답**: {log['user_answer']}  
+                        **정답**: {log['correct_answer']}  
+                        **결과**: {'✅ 정답' if log['is_correct'] else '❌ 오답'}  
+                        **응답 시간**: {log['response_time']:.2f}초
+                        ---
+                        """)
+    else:
+        st.info("현재 진행 중인 퀴즈가 없습니다.")
+    
+    # 오류 항목 표시
+    error_df = leaderboard_df[leaderboard_df["status"] == "error"]
+    if not error_df.empty:
+        st.subheader("오류 발생 항목")
+        st.dataframe(error_df[["name", "api_endpoint", "submission_time"]], use_container_width=True)
+
+# Add footer
+st.markdown("---")
+st.markdown("AI Model Leaderboard - Powered by Streamlit and Hugging Face Spaces")
+
+# 퀴즈 처리 함수
+def process_quiz(name, api_endpoint):
+    """
+    사용자 API 엔드포인트로 퀴즈를 전송하고 결과를 처리합니다.
+    """
+    try:
+        # API 클라이언트 초기화
+        api_client = APIClient(api_endpoint)
+        
+        # 총 문제 수 가져오기
+        total_questions = quiz_manager.get_total_questions()
+        
+        # 결과 저장 변수
+        exact_match_results = []
+        llm_judge_results = []
+        response_times = []
+        
+        # 각 문제 처리
+        for i in range(total_questions):
+            # 현재 진행 상황 업데이트
+            leaderboard_manager.update_question_progress(name, api_endpoint, i)
+            
+            # 문제 가져오기
+            question_data = quiz_manager.get_question(i)
+            correct_answer = quiz_manager.get_correct_answer(i)
+            
+            # API로 문제 전송
+            response, response_time, success = api_client.send_question(question_data)
+            
+            if not success:
+                logger.log_error(name, api_endpoint, f"API 호출 실패: 문제 {i}")
+                leaderboard_manager.update_error_status(name, api_endpoint, f"API 호출 실패: 문제 {i}")
+                return
+            
+            # 응답 검증
+            if not api_client.validate_response(response):
+                logger.log_error(name, api_endpoint, f"유효하지 않은 응답: 문제 {i}")
+                leaderboard_manager.update_error_status(name, api_endpoint, f"유효하지 않은 응답: 문제 {i}")
+                return
+            
+            # 사용자 답변 추출
+            user_answer = response.get("answer", "")
+            
+            # Exact Match 채점
+            is_correct = scorer.exact_match_score(user_answer, correct_answer)
+            exact_match_results.append(is_correct)
+            
+            # LLM as Judge 채점
+            llm_score, _ = scorer.llm_judge_score(user_answer, correct_answer, question_data.get("question_text", ""))
+            llm_judge_results.append(llm_score)
+            
+            # 응답 시간 기록
+            response_times.append(response_time)
+            
+            # 로그 기록
+            logger.log_question_response(
+                name, api_endpoint, i, 
+                question_data.get("question_text", ""),
+                user_answer, correct_answer,
+                is_correct, response_time
+            )
+        
+        # 최종 결과 계산
+        correct_rate = scorer.calculate_total_score(exact_match_results) * 100
+        avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+        llm_result = sum(llm_judge_results) / len(llm_judge_results) if llm_judge_results else 0
+        
+        # 리더보드 업데이트
+        leaderboard_manager.update_completion(
+            name, api_endpoint, correct_rate, avg_response_time, str(llm_result)
+        )
+        
+    except Exception as e:
+        error_msg = f"처리 중 오류 발생: {str(e)}"
+        logger.log_error(name, api_endpoint, error_msg)
+        leaderboard_manager.update_error_status(name, api_endpoint, error_msg)

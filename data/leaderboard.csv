@@ -1,0 +1,13 @@
+name,api_endpoint,correct_answer_rate,average_response_time,submission_time,completion_time,current_question_index,status,llm_judge_result
+김철수,https://api.example.com/quiz/kimcs,85.7,1.23,2023-11-15T14:30:25,2023-11-15T14:35:42,7,completed,82.3
+이영희,https://api.example.com/quiz/leeyh,92.3,0.87,2023-11-15T15:10:18,2023-11-15T15:14:30,7,completed,90.1
+박민수,https://api.example.com/quiz/parkms,78.5,1.45,2023-11-15T16:05:33,2023-11-15T16:11:20,7,completed,75.8
+정지원,https://api.example.com/quiz/jungjw,0.0,0.0,2023-11-15T16:30:12,,2,error,0.0
+최동현,https://api.example.com/quiz/choedh,64.2,2.31,2023-11-15T17:15:45,2023-11-15T17:22:10,7,completed,68.5
+한소연,https://api.example.com/quiz/hansy,42.8,1.78,2023-11-15T18:20:33,2023-11-15T18:26:15,7,completed,45.2
+오준호,https://api.example.com/quiz/ohjh,0.0,0.0,2023-11-15T19:05:27,,4,processing,28.6
+김철수,https://api.example.com/quiz/kimcs/v2,90.5,0.95,2023-11-16T10:22:15,2023-11-16T10:28:40,7,completed,85.7
+김철수,https://api.example.com/quiz/kimcs/v3,82.3,1.05,2023-11-17T09:15:30,2023-11-17T09:22:18,7,completed,89.2
+이영희,https://api.example.com/quiz/leeyh/new,88.9,0.92,2023-11-16T14:40:22,2023-11-16T14:46:05,7,completed,94.5
+박민수,https://api.example.com/quiz/parkms/improved,85.7,1.12,2023-11-17T11:30:45,2023-11-17T11:37:20,7,completed,80.3
+최동현,https://api.example.com/quiz/choedh/updated,70.1,1.98,2023-11-16T16:10:33,2023-11-16T16:17:25,7,completed,72.8 

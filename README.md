@@ -1,44 +1,39 @@
----
-title: 3kingdoms Qa Leaderboard
-emoji: 🥇
-colorFrom: green
-colorTo: indigo
-sdk: gradio
-app_file: app.py
-pinned: true
-license: unlicense
----
+# 🏆 AI 모델 리더보드
 
-# Start the configuration
+다양한 AI 모델의 성능 지표를 추적하고 비교하는 Streamlit 웹 애플리케이션입니다.
 
-Most of the variables to change for a default leaderboard are in `src/env.py` (replace the path for your leaderboard) and `src/about.py` (for tasks).
+## 📋 설명
 
-Results files should have the following format and be stored as json files:
-```json
-{
-    "config": {
-        "model_dtype": "torch.float16", # or torch.bfloat16 or 8bit or 4bit
-        "model_name": "path of the model on the hub: org/model",
-        "model_sha": "revision on the hub",
-    },
-    "results": {
-        "task_name": {
-            "metric_name": score,
-        },
-        "task_name2": {
-            "metric_name": score,
-        }
-    }
-}
+이 애플리케이션은 다양한 AI 모델의 성능을 추적, 비교 및 시각화하는 간단한 방법을 제공합니다. API 엔드포인트와 주요 성능 지표를 포함하여 리더보드에 모델을 추가한 다음, 다양한 기준으로 정렬하고 비교할 수 있습니다.
+
+## ✨ 주요 기능
+
+- AI 모델의 정렬 가능한 리더보드 보기
+- 성능 지표와 함께 새로운 AI 모델 추가
+- 다음 기준으로 모델 정렬:
+  - 정답률 (높은 순)
+  - 응답 시간 (낮은 순)
+  - 평균 토큰 수 (낮은 순)
+  - 이름 (알파벳순)
+- CSV 파일을 사용한 영구 저장소
+- Streamlit을 활용한 깔끔하고 반응형 UI
+
+## 🛠️ 설치 방법
+
+1. 저장소 복제:
+   ```bash
+   git clone https://github.com/yourusername/ai-model-leaderboard.git
+   cd ai-model-leaderboard
+   ```
+
+2. 필요한 의존성 설치:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## 🚀 사용 방법
+
+애플리케이션 실행:
+```bash
+streamlit run app.py
 ```
-
-Request files are created automatically by this tool.
-
-If you encounter problem on the space, don't hesitate to restart it to remove the create eval-queue, eval-queue-bk, eval-results and eval-results-bk created folder.
-
-# Code logic for more complex edits
-
-You'll find 
-- the main table' columns names and properties in `src/display/utils.py`
-- the logic to read all results and request files, then convert them in dataframe lines, in `src/leaderboard/read_evals.py`, and `src/populate.py`
-- the logic to allow or filter submissions in `src/submission/submit.py` and `src/submission/check_validity.py`
