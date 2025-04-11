@@ -13,6 +13,84 @@ from leaderboard_manager import LeaderboardManager
 from logger import QuizLogger
 import utils
 
+# 퀴즈 처리 함수
+def process_quiz(name, api_endpoint):
+    """
+    사용자 API 엔드포인트로 퀴즈를 전송하고 결과를 처리합니다.
+    """
+    try:
+        # API 클라이언트 초기화
+        api_client = APIClient(api_endpoint)
+        
+        # 총 문제 수 가져오기
+        total_questions = quiz_manager.get_total_questions()
+        
+        # 결과 저장 변수
+        exact_match_results = []
+        llm_judge_results = []
+        response_times = []
+        
+        # 각 문제 처리
+        for i in range(total_questions):
+            # 현재 진행 상황 업데이트
+            leaderboard_manager.update_question_progress(name, api_endpoint, i)
+            
+            # 문제 가져오기
+            question_data = quiz_manager.get_question(i)
+            correct_answer = quiz_manager.get_correct_answer(i)
+            
+            # API로 문제 전송
+            response, response_time, success = api_client.send_question(question_data)
+            
+            if not success:
+                logger.log_error(name, api_endpoint, f"API 호출 실패: 문제 {i}")
+                leaderboard_manager.update_error_status(name, api_endpoint, f"API 호출 실패: 문제 {i}")
+                return
+            
+            # 응답 검증
+            if not api_client.validate_response(response):
+                logger.log_error(name, api_endpoint, f"유효하지 않은 응답: 문제 {i}")
+                leaderboard_manager.update_error_status(name, api_endpoint, f"유효하지 않은 응답: 문제 {i}")
+                return
+            
+            # 사용자 답변 추출
+            user_answer = response.get("answer", "")
+            
+            # Exact Match 채점
+            is_correct = scorer.exact_match_score(user_answer, correct_answer)
+            exact_match_results.append(is_correct)
+            
+            # LLM as Judge 채점
+            llm_score, _ = scorer.llm_judge_score(user_answer, correct_answer, question_data.get("question_text", ""))
+            llm_judge_results.append(llm_score)
+
+            
+            # 응답 시간 기록
+            response_times.append(response_time)
+            
+            # 로그 기록
+            logger.log_question_response(
+                name, api_endpoint, i, 
+                question_data.get("question_text", ""),
+                user_answer, correct_answer,
+                is_correct, llm_score, response_time
+            )
+        
+        # 최종 결과 계산
+        correct_rate = scorer.calculate_total_score(exact_match_results) * 100
+        avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+        llm_result = sum(llm_judge_results) / len(llm_judge_results) if llm_judge_results else 0
+        
+        # 리더보드 업데이트
+        leaderboard_manager.update_completion(
+            name, api_endpoint, correct_rate, avg_response_time, str(llm_result)
+        )
+        
+    except Exception as e:
+        error_msg = f"처리 중 오류 발생: {str(e)}"
+        logger.log_error(name, api_endpoint, error_msg)
+        leaderboard_manager.update_error_status(name, api_endpoint, error_msg)
+
 # Set page title and configuration
 st.set_page_config(
     page_title="3kingdoms Quiz Leaderboard",
@@ -22,7 +100,7 @@ st.set_page_config(
 
 # 데이터 경로 설정
 DATA_DIR = "data"
-QUIZ_DATA_PATH = os.path.join(DATA_DIR, "quiz_data.csv")
+QUIZ_DATA_PATH = os.path.join(DATA_DIR, "sorted_quiz_data.csv")
 LEADERBOARD_PATH = os.path.join(DATA_DIR, "leaderboard.csv")
 
 # 디렉토리 생성
@@ -130,8 +208,9 @@ with tab2:
                     st.success(f"{name}님의 API가 제출되었습니다. 퀴즈 처리가 시작됩니다.")
                     
                     # 백그라운드에서 퀴즈 처리 시작
+                    # 함수 정의를 참조하는 대신 전체 경로 사용
                     thread = threading.Thread(
-                        target=process_quiz,
+                        target=process_quiz,  # 전체 경로로 함수 참조
                         args=(name, api_endpoint)
                     )
                     thread.daemon = True
@@ -188,80 +267,3 @@ with tab3:
 # Add footer
 st.markdown("---")
 st.markdown("AI Model Leaderboard - Powered by Streamlit and Hugging Face Spaces")
-
-# 퀴즈 처리 함수
-def process_quiz(name, api_endpoint):
-    """
-    사용자 API 엔드포인트로 퀴즈를 전송하고 결과를 처리합니다.
-    """
-    try:
-        # API 클라이언트 초기화
-        api_client = APIClient(api_endpoint)
-        
-        # 총 문제 수 가져오기
-        total_questions = quiz_manager.get_total_questions()
-        
-        # 결과 저장 변수
-        exact_match_results = []
-        llm_judge_results = []
-        response_times = []
-        
-        # 각 문제 처리
-        for i in range(total_questions):
-            # 현재 진행 상황 업데이트
-            leaderboard_manager.update_question_progress(name, api_endpoint, i)
-            
-            # 문제 가져오기
-            question_data = quiz_manager.get_question(i)
-            correct_answer = quiz_manager.get_correct_answer(i)
-            
-            # API로 문제 전송
-            response, response_time, success = api_client.send_question(question_data)
-            
-            if not success:
-                logger.log_error(name, api_endpoint, f"API 호출 실패: 문제 {i}")
-                leaderboard_manager.update_error_status(name, api_endpoint, f"API 호출 실패: 문제 {i}")
-                return
-            
-            # 응답 검증
-            if not api_client.validate_response(response):
-                logger.log_error(name, api_endpoint, f"유효하지 않은 응답: 문제 {i}")
-                leaderboard_manager.update_error_status(name, api_endpoint, f"유효하지 않은 응답: 문제 {i}")
-                return
-            
-            # 사용자 답변 추출
-            user_answer = response.get("answer", "")
-            
-            # Exact Match 채점
-            is_correct = scorer.exact_match_score(user_answer, correct_answer)
-            exact_match_results.append(is_correct)
-            
-            # LLM as Judge 채점
-            llm_score, _ = scorer.llm_judge_score(user_answer, correct_answer, question_data.get("question_text", ""))
-            llm_judge_results.append(llm_score)
-            
-            # 응답 시간 기록
-            response_times.append(response_time)
-            
-            # 로그 기록
-            logger.log_question_response(
-                name, api_endpoint, i, 
-                question_data.get("question_text", ""),
-                user_answer, correct_answer,
-                is_correct, response_time
-            )
-        
-        # 최종 결과 계산
-        correct_rate = scorer.calculate_total_score(exact_match_results) * 100
-        avg_response_time = sum(response_times) / len(response_times) if response_times else 0
-        llm_result = sum(llm_judge_results) / len(llm_judge_results) if llm_judge_results else 0
-        
-        # 리더보드 업데이트
-        leaderboard_manager.update_completion(
-            name, api_endpoint, correct_rate, avg_response_time, str(llm_result)
-        )
-        
-    except Exception as e:
-        error_msg = f"처리 중 오류 발생: {str(e)}"
-        logger.log_error(name, api_endpoint, error_msg)
-        leaderboard_manager.update_error_status(name, api_endpoint, error_msg)

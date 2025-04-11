@@ -18,8 +18,24 @@ def retry(func: Callable[..., T], max_retries: int = 3,
     Returns:
         재시도 로직이 포함된 래퍼 함수
     """
-    # 구현 필요
-    pass
+    def wrapper(*args, **kwargs):
+        attempts = 0
+        last_exception = None
+        
+        while attempts < max_retries:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                attempts += 1
+                last_exception = e
+                logging.warning(f"Attempt {attempts}/{max_retries} failed for {func.__name__}: {str(e)}")
+                if attempts < max_retries:
+                    time.sleep(retry_delay)
+        
+        logging.error(f"All {max_retries} attempts failed for {func.__name__}: {str(last_exception)}")
+        return None
+        
+    return wrapper
 
 def sanitize_input(text: str) -> str:
     """
@@ -31,8 +47,19 @@ def sanitize_input(text: str) -> str:
     Returns:
         정제된 텍스트
     """
-    # 구현 필요
-    pass
+    if text is None:
+        return ""
+    
+    # 앞뒤 공백 제거
+    text = text.strip()
+    
+    # HTML 태그 및 특수 문자 이스케이프 처리
+    text = text.replace("<", "&lt;").replace(">", "&gt;")
+    
+    # 줄바꿈 문자 정규화
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    
+    return text
 
 def format_time(seconds: float) -> str:
     """
@@ -44,8 +71,25 @@ def format_time(seconds: float) -> str:
     Returns:
         포맷된 시간 문자열
     """
-    # 구현 필요
-    pass
+    if seconds < 0:
+        return "0초"
+    
+    if seconds < 1:
+        # 1초 미만은 밀리초로 표시
+        return f"{seconds*1000:.0f}ms"
+    
+    if seconds < 60:
+        # 1분 미만은 초로 표시
+        return f"{seconds:.1f}초"
+    
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        # 1시간 미만은 분:초로 표시
+        return f"{int(minutes)}분 {int(seconds)}초"
+    
+    hours, minutes = divmod(minutes, 60)
+    # 1시간 이상은 시:분:초로 표시
+    return f"{int(hours)}시간 {int(minutes)}분 {int(seconds)}초"
 
 def safe_csv_update(df: pd.DataFrame, csv_path: str) -> bool:
     """
@@ -58,5 +102,31 @@ def safe_csv_update(df: pd.DataFrame, csv_path: str) -> bool:
     Returns:
         성공 여부
     """
-    # 구현 필요
-    pass 
+    try:
+        # 임시 파일 경로 생성
+        temp_path = f"{csv_path}.tmp"
+        
+        # 임시 파일에 먼저 저장
+        df.to_csv(temp_path, index=False, encoding='utf-8')
+        
+        # 파일 시스템 동기화 (플러시)
+        import os
+        os.fsync(open(temp_path, 'r+').fileno())
+        
+        # 기존 파일 백업 (기존 파일이 있는 경우)
+        backup_path = f"{csv_path}.bak"
+        if os.path.exists(csv_path):
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+            os.rename(csv_path, backup_path)
+        
+        # 임시 파일을 정식 파일로 이름 변경
+        os.rename(temp_path, csv_path)
+        
+        # 성공적으로 업데이트됨
+        logging.info(f"Successfully updated {csv_path}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Error updating {csv_path}: {str(e)}")
+        return False 

@@ -26,9 +26,15 @@ async def answer_question(question: QuizQuestion):
     GPT-4o-mini 모델을 사용하여 답변을 생성합니다.
     """
     try:
+        print(f"[요청 받음] 질문 ID: {question.question_id}, 난이도: {question.difficulty}")
+        print(f"[질문 내용] {question.question}")
+        
         answer = get_answer(question.question, question.question_id, question.difficulty)
+        
+        print(f"[응답 생성] 질문 ID: {question.question_id}, 답변: {answer}")
         return QuizAnswer(answer=answer)
     except Exception as e:
+        print(f"[오류 발생] 질문 ID: {question.question_id}, 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
 
 def get_answer(question: str, question_id: str, difficulty: str) -> str:
@@ -51,7 +57,11 @@ def get_answer(question: str, question_id: str, difficulty: str) -> str:
             model="gpt-4o-mini",  # GPT-4o-mini 모델 사용
             messages=[
                 {"role": "system", "content": "당신은 삼국지에 대한 전문가입니다. 삼국지 관련 퀴즈 질문에 정확하고 간결하게 단답형으로 답변해 주세요."},
-                {"role": "user", "content": f"다음 삼국지 관련 퀴즈 질문에 답변해주세요. 난이도: {difficulty}\n\n질문: {question}"}
+                {"role": "user", "content": f"질문: ( 연의 ) 유비가 서천을 평정하자, 손권은 형주를 돌려받기 위해, _____의 가족을 거짓으로 인질로 잡고는 그를 유비에게 사신으로 보내어 형주를 돌려달라고 했다."},
+                {"role": "assistant", "content": f"제갈근"},
+                {"role": "user", "content": f"질문: ( 연의 ) 손권은 관우를 죽이고 나서 연회를 열어 장수들의 전공을 축하했는데, 이 자리에서 '조조를 적벽에서 이긴 주유나 ㅁ주 지배를 하지 못한 노숙보다 여몽이 더 뛰어나다' 고 여몽에게 말했다."},
+                {"role": "assistant", "content": f"형"},
+                {"role": "user", "content": f"질문: {question}"}
             ],
             max_tokens=300,
             temperature=0.3,  # 정확한 답변을 위해 낮은 temperature 설정

@@ -30,13 +30,13 @@ class QuizManager:
     
     def get_question(self, index: int) -> Dict[str, Any]:
         """
-        특정 인덱스의 퀴즈 문제를 반환합니다.
+        특정 인덱스의 퀴즈 문제를 API 요청 형식에 맞게 반환합니다.
         
         Args:
             index: 가져올 문제의 인덱스
             
         Returns:
-            문제 데이터가 포함된 딕셔너리
+            API 요청에 필요한 형식으로 포맷된 문제 데이터 딕셔너리
         """
         if self.quiz_data is None or index < 0 or index >= len(self.quiz_data):
             raise IndexError(f"유효하지 않은 문제 인덱스: {index}")
@@ -44,11 +44,14 @@ class QuizManager:
         # 해당 행을 딕셔너리로 변환
         question_data = self.quiz_data.iloc[index].to_dict()
         
-        # 최소한 question 키는 포함되어야 함
-        if 'question' not in question_data:
-            raise ValueError(f"인덱스 {index}의 문제 데이터에 'question' 필드가 없습니다")
+        # API 요청 형식에 맞게 데이터 구성
+        formatted_question = {
+            "question": question_data.get('question', ''),
+            "question_id": str(index),  # 인덱스를 question_id로 사용
+            "difficulty": question_data.get('difficulty', 'medium')  # 기본 난이도 medium
+        }
         
-        return question_data
+        return formatted_question
     
     def get_correct_answer(self, index: int) -> str:
         """
@@ -82,15 +85,26 @@ class QuizManager:
     
     def get_all_questions(self) -> List[Dict[str, Any]]:
         """
-        모든 퀴즈 문제를 리스트로 반환합니다.
+        모든 퀴즈 문제를 API 요청 형식에 맞게 포맷하여 리스트로 반환합니다.
         
         Returns:
-            모든 문제 데이터가 포함된 딕셔너리 리스트
+            API 요청 형식으로 포맷된 모든 문제 데이터의 딕셔너리 리스트
         """
         if self.quiz_data is None:
             return []
         
-        return self.quiz_data.to_dict(orient='records')
+        formatted_questions = []
+        for index, row in self.quiz_data.iterrows():
+            question_data = row.to_dict()
+            formatted_question = {
+                "question": question_data.get('question', ''),
+                "question_id": str(index),
+                "difficulty": question_data.get('difficulty', 'medium')
+            }
+            formatted_question['question_text'] = question_data.get('question', '')
+            formatted_questions.append(formatted_question)
+        
+        return formatted_questions
     
     def reload_quiz_data(self) -> None:
         """퀴즈 데이터를 다시 로드합니다."""

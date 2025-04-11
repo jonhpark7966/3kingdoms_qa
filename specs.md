@@ -122,8 +122,6 @@
   - 관리자는 별도의 인터페이스 또는 스크립트를 통해 로그를 확인하고 LLM as judge 채점 결과를 재검토할 수 있음.
   - 재채점 스크립트는 csv 파일의 `llm_judge_result` 컬럼을 업데이트하도록 설계.
 
-
-
 ## 7. 파일 구조
 
 ```
@@ -143,3 +141,90 @@
 │
 └── requirements.txt           # 필요한 패키지 목록
 ```
+
+## 8. API 통신 명세
+
+### 8.1. API 엔드포인트 요청 스펙
+
+사용자는 다음 스펙을 준수하는 FastAPI 기반 엔드포인트를 구현해야 합니다:
+
+#### 요청 (Request)
+
+- **Method**: POST
+- **Content-Type**: application/json
+- **Body**:
+  ```json
+  {
+    "question": "문제 텍스트",
+    "question_id": "문제 고유 ID",
+    "difficulty": "문제 난이도 (easy, medium, hard, very hard, super hard)"
+  }
+  ```
+
+#### 응답 (Response)
+
+- **Content-Type**: application/json
+- **Body**:
+  ```json
+  {
+    "answer": "사용자의 답변 문자열"
+  }
+  ```
+
+#### 요구사항
+
+1. **응답 시간**: 각 문제에 대한 응답은 최대 30초 이내에 반환되어야 합니다.
+2. **안정성**: API는 연속적인 요청을 처리할 수 있어야 합니다.
+3. **오류 처리**: API는 적절한 HTTP 상태 코드와 오류 메시지를 반환해야 합니다.
+
+### 8.2. 예제
+
+#### 요청 예시
+
+```http
+POST /your-endpoint
+Content-Type: application/json
+
+{
+  "question": "( 연의 ) 손견의 아내인 오태부인은 임종 직전에 장소와 주유를 불러 말하기를, 손책을 낳을 때에는 ㅁ을 품는 꿈을 꾸었고, 손권을 낳을 때에는 해를 품는 꿈을 꾸었다고 말했다.",
+  "question_id": "42",
+  "difficulty": "hard"
+}
+```
+
+#### 응답 예시
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "answer": "달"
+}
+```
+
+### 8.3. 오류 처리
+
+오류가 발생할 경우, 다음과 같은 HTTP 상태 코드와 함께 오류 메시지를 반환해야 합니다:
+
+- **400 Bad Request**: 요청이 잘못된 경우
+- **500 Internal Server Error**: 서버 내부 오류가 발생한 경우
+
+예시:
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "error": "요청 형식이 올바르지 않습니다"
+}
+```
+
+### 8.4. 채점 방식 안내
+
+각 문제의 응답은 다음 두 가지 방식으로 채점됩니다:
+
+1. **Exact Match**: 사용자의 답변(answer)과 정답이 정확히 일치하는지 여부
+2. **LLM as Judge**: LLM을 활용해 사용자의 답변을 평가하는 방식
+
+따라서, 사용자는 가능한 한 정확하고 간결한 답변을 제출하는 것이 유리합니다.
